@@ -5,3 +5,5 @@ topics:
   - foundations
   - migrations
 homepage: "https://swift-institute.org"
+readme:
+  family: F
