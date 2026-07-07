@@ -11,14 +11,14 @@ let package = Package(
         .library(name: "Migrations", targets: ["Migrations"])
     ],
     dependencies: [
-        // Path-form (not URL-form) is forced by SwiftPM: swift-sql itself depends on
-        // swift-postgresql-standard via a PATH dependency (that package's macro target uses a
-        // relative symlink that only resolves in the sibling workspace layout, so it cannot be a
-        // cloned source-control checkout). SwiftPM rejects a revision-based dependency that in turn
-        // has a local/path dependency ("… is required using a revision-based requirement and it
-        // depends on local package 'swift-postgresql-standard', which is not supported"), so
-        // swift-sql must be consumed in-place too. See the report on this upstream constraint.
-        .package(path: "/Users/coen/Developer/swift-foundations/swift-sql")
+        // URL-form: swift-sql formerly had to be consumed via a local/path dependency because it
+        // in turn depended on swift-postgresql-standard by path (that package's macro target used
+        // a relative symlink that only resolved in the sibling workspace layout, so it couldn't be
+        // a cloned source-control checkout — and SwiftPM rejects a revision-based dependency that
+        // itself depends on a local package). swift-postgresql-standard now vendors those sources
+        // as real files, so swift-sql resolves as a plain revision-based dependency, and this
+        // package can do the same.
+        .package(url: "https://github.com/swift-foundations/swift-sql.git", branch: "main")
     ],
     targets: [
         // MARK: - Migrations (ordered migration set + runner over SQL.Database)
