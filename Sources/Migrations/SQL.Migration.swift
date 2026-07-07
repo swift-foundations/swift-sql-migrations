@@ -11,6 +11,10 @@
 
 public import SQL
 
+// `any SQL.Connection` / `any SQL.Database` existentials are the deliberate
+// engine-free membrane design of swift-sql: conformers are engine-specific and
+// heterogeneous; generics would leak the engine type into consumer signatures.
+// swiftlint:disable no_any_protocol_existential
 extension SQL {
     /// A single named migration: an identifier plus the work that applies it.
     ///
@@ -30,3 +34,4 @@ extension SQL {
         }
     }
 }
+// swiftlint:enable no_any_protocol_existential

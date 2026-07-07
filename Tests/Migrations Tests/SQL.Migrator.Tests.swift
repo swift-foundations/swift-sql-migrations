@@ -9,11 +9,10 @@
 //
 // ===----------------------------------------------------------------------===//
 
-import Testing
-
 import Migrations
 import SQL
 import SQL_Test_Support
+import Testing
 
 // MARK: - Pure (no database)
 

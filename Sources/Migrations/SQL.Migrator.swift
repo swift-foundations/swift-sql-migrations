@@ -11,6 +11,10 @@
 
 public import SQL
 
+// `any SQL.Connection` / `any SQL.Database` existentials are the deliberate
+// engine-free membrane design of swift-sql: conformers are engine-specific and
+// heterogeneous; generics would leak the engine type into consumer signatures.
+// swiftlint:disable no_any_protocol_existential
 extension SQL {
     /// An ordered set of named migrations plus a runner: register migrations in order, then
     /// ``migrate(_:)`` applies the pending ones and records each in an applied-migrations table.
@@ -45,6 +49,7 @@ extension SQL.Migrator {
     }
 
     /// Computes which registered migrations are not yet in `applied`, preserving application order.
+    ///
     /// Pure — testable without a database.
     public func pending(applied: Set<String>) -> [SQL.Migration] {
         migrations.filter { !applied.contains($0.name) }
@@ -79,7 +84,7 @@ extension SQL.Migrator {
         let applied = Set(appliedNames)
 
         for migration in pending(applied: applied) {
-            try await database.write { (connection: any SQL.Connection) throws(SQL.Error) -> Void in
+            try await database.write { (connection: any SQL.Connection) throws(SQL.Error) in
                 try await migration.up(connection)
                 _ = try await connection.execute(
                     SQL.Query(
@@ -91,3 +96,4 @@ extension SQL.Migrator {
         }
     }
 }
+// swiftlint:enable no_any_protocol_existential
