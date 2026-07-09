@@ -16,7 +16,7 @@ import Testing
 
 // MARK: - Pure (no database)
 
-@Test func migratorPreservesRegistrationOrder() {
+@Test func `migrator preserves registration order`() {
     var migrator = SQL.Migrator()
     migrator.register("v1_accounts") { _ in }
     migrator.register("v2_repositories") { _ in }
@@ -24,7 +24,7 @@ import Testing
     #expect(migrator.names == ["v1_accounts", "v2_repositories", "v3_traffic"])
 }
 
-@Test func migratorPendingExcludesAppliedPreservingOrder() {
+@Test func `migrator pending excludes applied preserving order`() {
     var migrator = SQL.Migrator()
     migrator.register("a") { _ in }
     migrator.register("b") { _ in }
@@ -34,18 +34,18 @@ import Testing
     #expect(pending.map(\.name) == ["b", "d"])
 }
 
-@Test func migratorPendingEmptyWhenAllApplied() {
+@Test func `migrator pending empty when all applied`() {
     var migrator = SQL.Migrator()
     migrator.register("a") { _ in }
     migrator.register("b") { _ in }
     #expect(migrator.pending(applied: ["a", "b"]).isEmpty)
 }
 
-@Test func migratorAppliedTableNameIsStable() {
+@Test func `migrator applied table name is stable`() {
     #expect(SQL.Migrator.appliedTableName == "_sql_migrations")
 }
 
-@Test func registerBuiltMigrationAppends() {
+@Test func `register built migration appends`() {
     var migrator = SQL.Migrator()
     migrator.register(SQL.Migration(name: "x") { _ in })
     #expect(migrator.names == ["x"])
@@ -53,7 +53,7 @@ import Testing
 
 // MARK: - Scripted (over SQL.TestDatabase)
 
-@Test func migrateCreatesTableFirstThenInsertsBookkeepingRows() async throws {
+@Test func `migrate creates table first then inserts bookkeeping rows`() async throws {
     let database = SQL.TestDatabase()
     var migrator = SQL.Migrator()
     migrator.register("v1") { _ in }
@@ -71,7 +71,7 @@ import Testing
     #expect(inserts[1].bindings == [.text("v2")])
 }
 
-@Test func migrateSkipsAlreadyAppliedMigrations() async throws {
+@Test func `migrate skips already applied migrations`() async throws {
     let database = SQL.TestDatabase()
     // The applied-names SELECT consumes this scripted result set.
     await database.script(rows: [["name": .text("v1")]])
@@ -88,7 +88,7 @@ import Testing
     #expect(inserts[0].bindings == [.text("v2")])
 }
 
-@Test func migrateFailingUpPropagatesWithoutRecording() async throws {
+@Test func `migrate failing up propagates without recording`() async throws {
     let database = SQL.TestDatabase()
     var migrator = SQL.Migrator()
     migrator.register("v1") { _ throws(SQL.Error) in throw SQL.Error.migration("boom") }
