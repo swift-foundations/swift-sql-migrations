@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "swift-migrations",
+    name: "swift-sql-migrations",
     platforms: [
         .macOS(.v26)
     ],
