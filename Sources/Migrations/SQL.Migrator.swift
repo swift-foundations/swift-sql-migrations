@@ -61,6 +61,21 @@ extension SQL.Migrator {
     /// read, then each pending migration runs inside ONE ``SQL/Database/write(_:)`` scope together
     /// with the insert of its bookkeeping row — so a failed migration leaves no partial record (the
     /// write scope rolls back the migration's statements and its bookkeeping insert atomically).
+    ///
+    /// ### Concurrent runners
+    ///
+    /// `migrate(_:)` does not acquire a cross-process lock, so two runners started against the
+    /// same database can both read an empty/stale applied set and both attempt the same
+    /// migration. Concurrent invocation is therefore safe only when every registered migration's
+    /// `up` body is idempotent (e.g. `CREATE TABLE IF NOT EXISTS`-style DDL) — non-idempotent
+    /// migrations still require a single-runner deployment contract or external serialization.
+    ///
+    /// When two runners do race, the *loser*'s bookkeeping `INSERT` violates the applied-table's
+    /// `name` `PRIMARY KEY` — that failure is caught at the insert call site and rethrown as a
+    /// named ``SQL/Error/migration(_:)`` identifying the migration, instead of letting the
+    /// engine's raw, opaque constraint-violation text escape. The enclosing `write` scope still
+    /// rolls back on that throw, so the losing runner's `up()` effects are discarded atomically
+    /// along with the failed insert.
     public func migrate(_ database: any SQL.Database) async throws(SQL.Error) {
         let created = SQL.Query(
             sql: """
@@ -86,12 +101,26 @@ extension SQL.Migrator {
         for migration in pending(applied: applied) {
             try await database.write { (connection: any SQL.Connection) throws(SQL.Error) in
                 try await migration.up(connection)
-                _ = try await connection.execute(
-                    SQL.Query(
-                        sql: "INSERT INTO \(Self.appliedTableName) (name) VALUES ($1)",
-                        bindings: [.text(migration.name)]
+                do {
+                    _ = try await connection.execute(
+                        SQL.Query(
+                            sql: "INSERT INTO \(Self.appliedTableName) (name) VALUES ($1)",
+                            bindings: [.text(migration.name)]
+                        )
                     )
-                )
+                } catch {
+                    // Between the `applied` read above and this insert, a concurrent migrator may
+                    // have already committed this exact migration's bookkeeping row — the insert
+                    // then fails with a raw, engine-specific error (typically a PRIMARY KEY
+                    // violation on `name`). Name that race explicitly via the typed error domain
+                    // rather than letting the opaque engine error propagate; the enclosing `write`
+                    // scope still rolls back on this throw, discarding this runner's `up()`
+                    // effects atomically (see the concurrency contract on ``migrate(_:)``).
+                    throw SQL.Error.migration(
+                        "\(migration.name): bookkeeping insert failed — a concurrent migrator may "
+                            + "have already applied this migration (\(error))"
+                    )
+                }
             }
         }
     }
