@@ -27,11 +27,17 @@ extension SQL.Migrator {
 }
 
 extension SQL.Migrator.Concurrency {
+    /// Namespace for the racing-interleaving test double. [API-NAME-001]: nests `Database` /
+    /// `Connection` rather than the compound `RacingDatabase` / `RacingConnection`.
+    enum Racing {}
+}
+
+extension SQL.Migrator.Concurrency.Racing {
     /// A minimal ``SQL/Database`` double that models the PRIMARY KEY-constrained bookkeeping
     /// table and lets a test pin the exact interleaving of a concurrent-runner race: what a
     /// stale `read` (`SELECT`) reports vs. what is already committed to the table by the time
     /// the bookkeeping `INSERT` runs.
-    actor RacingDatabase: SQL.Database {
+    actor Database: SQL.Database {
         /// What the next `read` (the applied-names `SELECT`) reports — pinned to simulate a read
         /// that completed before a concurrent migrator's commit landed.
         private let readSees: Set<String>
@@ -42,65 +48,78 @@ extension SQL.Migrator.Concurrency {
             self.readSees = readSees
             self.committed = committed
         }
-
-        func read<Value: Sendable>(
-            _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
-        ) async throws(SQL.Error) -> Value {
-            try await body(RacingConnection(database: self))
-        }
-
-        func write<Value: Sendable>(
-            _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
-        ) async throws(SQL.Error) -> Value {
-            try await body(RacingConnection(database: self))
-        }
-
-        func withRollback<Value: Sendable>(
-            _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
-        ) async throws(SQL.Error) -> Value {
-            try await body(RacingConnection(database: self))
-        }
-
-        func namesVisibleToReader() -> [String] { Array(readSees) }
-
-        /// Enforces the PRIMARY KEY exactly like a live engine's bookkeeping-table insert would.
-        func insertBookkeeping(_ name: String) throws(SQL.Error) {
-            guard committed.insert(name).inserted else {
-                throw SQL.Error.execution(
-                    "duplicate key value violates unique constraint \"_sql_migrations_pkey\""
-                )
-            }
-        }
     }
 
-    struct RacingConnection: SQL.Connection {
-        let database: RacingDatabase
+    struct Connection: SQL.Connection {
+        let database: Database
+    }
+}
 
-        func execute(_ statement: some SQL.Statement) async throws(SQL.Error) -> Int {
-            guard statement.sql.contains("INSERT INTO"), let first = statement.bindings.first,
-                case .text(let name) = first
-            else { return 0 }
-            try await database.insertBookkeeping(name)
-            return 1
-        }
+extension SQL.Migrator.Concurrency.Racing.Database {
+    // Protocol requirements (`SQL.Database`) — compound names are accept-as-warning per
+    // [API-NAME-002] disposition (protocol requirement not yet in the witness allowlist).
+    func read<Value: Sendable>(
+        _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
+    ) async throws(SQL.Error) -> Value {
+        try await body(SQL.Migrator.Concurrency.Racing.Connection(database: self))
+    }
 
-        func fetchAll<Value: Sendable>(
-            _ statement: some SQL.Statement,
-            decode: (any SQL.Row) throws(SQL.Error) -> Value
-        ) async throws(SQL.Error) -> [Value] {
-            var results: [Value] = []
-            for name in await database.namesVisibleToReader() {
-                results.append(try decode(SQL.TestRow(["name": .text(name)])))
-            }
-            return results
-        }
+    func write<Value: Sendable>(
+        _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
+    ) async throws(SQL.Error) -> Value {
+        try await body(SQL.Migrator.Concurrency.Racing.Connection(database: self))
+    }
 
-        func fetchOne<Value: Sendable>(
-            _ statement: some SQL.Statement,
-            decode: (any SQL.Row) throws(SQL.Error) -> Value
-        ) async throws(SQL.Error) -> Value? {
-            nil
+    func withRollback<Value: Sendable>(
+        _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
+    ) async throws(SQL.Error) -> Value {
+        try await body(SQL.Migrator.Concurrency.Racing.Connection(database: self))
+    }
+
+    /// `fileprivate`: test-only helper, not a protocol requirement — exempt from
+    /// [API-NAME-002] under the fileprivate/private carve-out.
+    fileprivate func namesVisibleToReader() -> [String] { Array(readSees) }
+
+    /// Enforces the PRIMARY KEY exactly like a live engine's bookkeeping-table insert would.
+    ///
+    /// `fileprivate`: test-only helper, not a protocol requirement — exempt from
+    /// [API-NAME-002] under the fileprivate/private carve-out.
+    fileprivate func insertBookkeeping(_ name: String) throws(SQL.Error) {
+        guard committed.insert(name).inserted else {
+            throw SQL.Error.execution(
+                "duplicate key value violates unique constraint \"_sql_migrations_pkey\""
+            )
         }
+    }
+}
+
+extension SQL.Migrator.Concurrency.Racing.Connection {
+    func execute(_ statement: some SQL.Statement) async throws(SQL.Error) -> Int {
+        guard statement.sql.contains("INSERT INTO"), let first = statement.bindings.first,
+            case .text(let name) = first
+        else { return 0 }
+        try await database.insertBookkeeping(name)
+        return 1
+    }
+
+    // Protocol requirement (`SQL.Connection`) — compound name is accept-as-warning per
+    // [API-NAME-002] disposition (protocol requirement not yet in the witness allowlist).
+    func fetchAll<Value: Sendable>(
+        _ statement: some SQL.Statement,
+        decode: (any SQL.Row) throws(SQL.Error) -> Value
+    ) async throws(SQL.Error) -> [Value] {
+        var results: [Value] = []
+        for name in await database.namesVisibleToReader() {
+            results.append(try decode(SQL.TestRow(["name": .text(name)])))
+        }
+        return results
+    }
+
+    func fetchOne<Value: Sendable>(
+        _ statement: some SQL.Statement,
+        decode: (any SQL.Row) throws(SQL.Error) -> Value
+    ) async throws(SQL.Error) -> Value? {
+        nil
     }
 }
 
@@ -110,11 +129,11 @@ extension SQL.Migrator.Concurrency.`Edge Case` {
         // This runner's read of `applied` returned empty (stale relative to a concurrent
         // migrator that has already committed "v1"'s bookkeeping row by the time this runner's
         // INSERT runs) — the classic interleaving behind F-001's raw PRIMARY KEY violations.
-        let database = SQL.Migrator.Concurrency.RacingDatabase(readSees: [], committed: ["v1"])
+        let database = SQL.Migrator.Concurrency.Racing.Database(readSees: [], committed: ["v1"])
         var migrator = SQL.Migrator()
         migrator.register("v1") { _ in }
 
-        do {
+        do throws(SQL.Error) {
             try await migrator.migrate(database)
             Issue.record("expected migrate() to throw on the bookkeeping-insert race")
         } catch SQL.Error.migration(let detail) {
@@ -128,7 +147,7 @@ extension SQL.Migrator.Concurrency.`Edge Case` {
     func `non racing migration still applies cleanly against the same double`() async throws {
         // Positive control: no concurrent commit in play (`readSees` and `committed` agree), so
         // the insert is uncontended and migrate() succeeds normally.
-        let database = SQL.Migrator.Concurrency.RacingDatabase(readSees: [], committed: [])
+        let database = SQL.Migrator.Concurrency.Racing.Database(readSees: [], committed: [])
         var migrator = SQL.Migrator()
         migrator.register("v1") { _ in }
 

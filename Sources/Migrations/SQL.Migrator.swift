@@ -101,7 +101,7 @@ extension SQL.Migrator {
         for migration in pending(applied: applied) {
             try await database.write { (connection: any SQL.Connection) throws(SQL.Error) in
                 try await migration.up(connection)
-                do {
+                do throws(SQL.Error) {
                     _ = try await connection.execute(
                         SQL.Query(
                             sql: "INSERT INTO \(Self.appliedTableName) (name) VALUES ($1)",
