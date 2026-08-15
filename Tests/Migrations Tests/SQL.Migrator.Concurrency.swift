@@ -125,7 +125,9 @@ extension SQL.Migrator.Concurrency.Racing.Connection {
 
 extension SQL.Migrator.Concurrency.`Edge Case` {
     @Test
-    func `bookkeeping insert race surfaces as a named migration error, not a raw engine error`() async throws {
+    func `bookkeeping insert race surfaces as a named migration error, not a raw engine error`()
+        async throws
+    {
         // This runner's read of `applied` returned empty (stale relative to a concurrent
         // migrator that has already committed "v1"'s bookkeeping row by the time this runner's
         // INSERT runs) — the classic interleaving behind F-001's raw PRIMARY KEY violations.
