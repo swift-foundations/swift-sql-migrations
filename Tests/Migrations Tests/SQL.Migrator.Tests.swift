@@ -1,20 +1,7 @@
-// ===----------------------------------------------------------------------===//
-//
-// This source file is part of the swift-migrations open source project
-//
-// Copyright (c) 2026 Coen ten Thije Boonkkamp and the swift-migrations project authors
-// Licensed under Apache License v2.0
-//
-// See LICENSE for license information
-//
-// ===----------------------------------------------------------------------===//
-
 import Migrations
 import SQL
 import SQL_Test_Support
 import Testing
-
-// MARK: - Pure (no database)
 
 @Test func `migrator preserves registration order`() {
     var migrator = SQL.Migrator()
@@ -51,8 +38,6 @@ import Testing
     #expect(migrator.names == ["x"])
 }
 
-// MARK: - Scripted (over SQL.TestDatabase)
-
 @Test func `migrate creates table first then inserts bookkeeping rows`() async throws {
     let database = SQL.TestDatabase()
     var migrator = SQL.Migrator()
@@ -73,7 +58,7 @@ import Testing
 
 @Test func `migrate skips already applied migrations`() async throws {
     let database = SQL.TestDatabase()
-    // The applied-names SELECT consumes this scripted result set.
+
     await database.script(rows: [["name": .text("v1")]])
 
     var migrator = SQL.Migrator()
@@ -99,8 +84,7 @@ import Testing
     }
 
     let executed = await database.executed
-    // The CREATE TABLE and the applied-names SELECT ran; no bookkeeping INSERT was recorded
-    // because v1's `up` threw before the insert, and v2 is never reached.
+
     #expect(executed.first?.sql.contains("CREATE TABLE") == true)
     #expect(!executed.contains { $0.sql.contains("INSERT INTO _sql_migrations") })
 }
